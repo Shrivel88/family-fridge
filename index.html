@@ -1,0 +1,685 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Family Fridge</title>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#f2f5f3;
+  color:#20352a;
+}
+header {
+  background:#174b3b;
+  color:white;
+  padding:24px 12px;
+  text-align:center;
+}
+header h1 { margin:0; font-size:28px; }
+header p { margin:6px 0 0; font-size:14px; }
+main { max-width:760px; margin:auto; padding:14px; }
+nav {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:6px;
+  margin-bottom:14px;
+}
+button {
+  background:#187653;
+  color:white;
+  border:0;
+  border-radius:9px;
+  padding:11px;
+  cursor:pointer;
+  font-size:14px;
+}
+button:disabled { opacity:.5; }
+button.secondary { background:#e4ede7; color:#174b3b; }
+button.danger { background:#b84040; }
+button.active { background:#103b2e; }
+nav button { padding:12px 3px; font-size:13px; }
+.card {
+  background:white;
+  border-radius:14px;
+  padding:17px;
+  margin-bottom:14px;
+  box-shadow:0 2px 9px #0000000d;
+}
+.hidden { display:none !important; }
+h2 { margin-top:0; }
+h3 { color:#174b3b; }
+label { display:block; font-weight:bold; font-size:14px; }
+input,select {
+  width:100%;
+  padding:12px;
+  border:1px solid #cad7ce;
+  border-radius:9px;
+  margin:6px 0 13px;
+  font-size:16px;
+}
+.item {
+  border-bottom:1px solid #e5ede7;
+  padding:13px 0;
+}
+.item:last-child { border:0; }
+.row { display:flex; align-items:center; gap:9px; }
+.details { flex:1; min-width:0; }
+.name { font-weight:bold; overflow-wrap:anywhere; }
+.muted { color:#69796f; font-size:13px; }
+.qty { display:flex; align-items:center; gap:7px; }
+.qty button { width:36px; height:36px; padding:0; font-size:20px; }
+.qty strong { min-width:20px; text-align:center; }
+.actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.actions button { flex:1; }
+.notice {
+  background:#fff3d7;
+  padding:12px;
+  border-radius:9px;
+  margin:12px 0;
+}
+.success {
+  background:#e0f4e7;
+  color:#145b35;
+  padding:14px;
+  border-radius:9px;
+  margin:12px 0;
+}
+.low { color:#b7402d; font-weight:bold; }
+#reader { width:100%; max-width:480px; margin:auto; }
+.scanbox {
+  border:2px dashed #b1cbb9;
+  border-radius:12px;
+  padding:10px;
+  margin:15px 0;
+}
+#status { margin:10px 0; }
+@media(max-width:450px) {
+  .row { flex-wrap:wrap; }
+  .qty { margin-left:auto; }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <h1>Family Fridge</h1>
+  <p>Scan it. Stock it. Share it.</p>
+</header>
+
+<main>
+  <section id="loginPanel" class="card">
+    <h2>Welcome Home</h2>
+    <p>Enter your family's access PIN.</p>
+    <input id="familyPin" type="password"
+           autocomplete="off" placeholder="Family PIN">
+    <button onclick="signIn()">Open Family Fridge</button>
+    <p id="loginError" class="muted"></p>
+  </section>
+
+  <div id="app" class="hidden">
+    <nav>
+      <button id="navFridge" onclick="showTab('fridge')">Fridge</button>
+      <button id="navScan" onclick="showTab('scan')">Scan</button>
+      <button id="navShopping" onclick="showTab('shopping')">Shopping</button>
+      <button id="navAdd" onclick="showTab('add')">+ Add</button>
+    </nav>
+
+    <div class="row" style="justify-content:space-between">
+      <p id="status" class="muted">Ready</p>
+      <button class="secondary" onclick="refresh()">Refresh</button>
+      <button class="secondary" onclick="signOut()">Lock</button>
+    </div>
+
+    <section id="fridge" class="card">
+      <h2>What's in the Fridge?</h2>
+      <input id="search" placeholder="Search products"
+             oninput="renderFridge()">
+      <div id="fridgeList"></div>
+    </section>
+
+    <section id="scan" class="card hidden">
+      <h2>Barcode Scanner</h2>
+      <label>Scan destination</label>
+      <select id="scanDestination" onchange="updateScanMessage()">
+        <option value="fridge">Add to Fridge</option>
+        <option value="shopping">Add to Shopping List</option>
+      </select>
+
+      <div id="scanMessage" class="notice">
+        Scan a product to add one to your fridge.
+        Matching shopping-list entries are removed.
+      </div>
+
+      <div class="scanbox"><div id="reader"></div></div>
+
+      <div class="actions">
+        <button id="startButton" onclick="startCamera()">Start Camera</button>
+        <button class="secondary" onclick="stopCamera()">Stop Camera</button>
+      </div>
+
+      <div id="scanResult" aria-live="polite"></div>
+
+      <h3>Enter Barcode Manually</h3>
+      <input id="manualBarcode" inputmode="numeric"
+             placeholder="UPC or EAN number">
+      <button onclick="manualScan()">Look Up & Add</button>
+    </section>
+
+    <section id="shopping" class="card hidden">
+      <h2>Family Shopping List</h2>
+      <button onclick="scanToShopping()">Scan Item to Shopping</button>
+      <h3>Things We Need</h3>
+      <div id="shoppingList"></div>
+      <h3>Low-Stock Suggestions</h3>
+      <div id="suggestions"></div>
+    </section>
+
+    <section id="add" class="card hidden">
+      <h2>Add Product Manually</h2>
+
+      <label>Destination</label>
+      <select id="addDestination" onchange="updateAddForm()">
+        <option value="fridge">Fridge</option>
+        <option value="shopping">Shopping List</option>
+      </select>
+
+      <input type="hidden" id="itemId">
+
+      <label>Product Name</label>
+      <input id="name" placeholder="Example: Ranch Dressing">
+
+      <label>Category</label>
+      <select id="category"></select>
+
+      <label>Quantity</label>
+      <input id="quantity" type="number" min="0" value="1">
+
+      <div id="fridgeFields">
+        <label>Unit</label>
+        <select id="unit">
+          <option>each</option>
+          <option>bottles</option>
+          <option>cans</option>
+          <option>packs</option>
+          <option>containers</option>
+          <option>lbs</option>
+        </select>
+
+        <label>Low Stock Alert At</label>
+        <input id="low" type="number" min="0" value="1">
+      </div>
+
+      <label>Barcode (optional)</label>
+      <input id="barcode" inputmode="numeric"
+             placeholder="UPC / EAN barcode">
+
+      <div class="actions">
+        <button onclick="saveManual()">Save</button>
+        <button class="secondary" onclick="resetForm()">Clear</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+// REPLACE THIS URL WITH YOUR CLOUDFLARE WORKER URL.
+// Keep the quotes. Do not add a trailing slash.
+const API_URL = 'https://family-fridge-api.clshreve88.workers.dev';
+
+const CATEGORIES = [
+  'Juice','Soda','Drinks','Condiments','Lunch Meat',
+  'Dairy','Produce','Meat','Leftovers',
+  'Snacks','Frozen','Other'
+];
+
+let pin = '';
+let inventory = [];
+let shopping = [];
+let busy = false;
+let scanner = null;
+let starting = false;
+let processing = false;
+let currentTab = 'fridge';
+
+function el(id) { return document.getElementById(id); }
+
+function safe(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g,c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;',
+    '"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function statusText(s) { el('status').textContent = s; }
+
+async function api(action,...args) {
+  const response = await fetch(API_URL,{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'X-Family-Pin':pin
+    },
+    body:JSON.stringify({action,args}),
+    cache:'no-store'
+  });
+
+  const data = await response.json();
+
+  if (!data.ok) {
+    throw new Error(data.error || 'Request failed');
+  }
+
+  return data.result;
+}
+
+async function run(action,args,callback) {
+  if (busy) return;
+  busy = true;
+  statusText('Updating...');
+
+  try {
+    const result = await api(action,...args);
+    if (callback) callback(result);
+    statusText('Up to date');
+    return result;
+  } catch(e) {
+    statusText('Error: '+e.message);
+    alert(e.message);
+  } finally {
+    busy = false;
+  }
+}
+
+async function signIn() {
+  const candidate = el('familyPin').value.trim();
+
+  if (!candidate) {
+    el('loginError').textContent = 'Enter your PIN.';
+    return;
+  }
+
+  pin = candidate;
+  el('loginError').textContent = 'Connecting...';
+
+  try {
+    const data = await api('getData');
+    el('loginPanel').classList.add('hidden');
+    el('app').classList.remove('hidden');
+    applyData(data);
+    showTab('fridge',false);
+  } catch(e) {
+    pin = '';
+    el('loginError').textContent = e.message;
+  }
+}
+
+function signOut() {
+  stopCamera();
+  pin = '';
+  el('familyPin').value = '';
+  el('app').classList.add('hidden');
+  el('loginPanel').classList.remove('hidden');
+}
+
+function applyData(data) {
+  inventory = data.inventory || [];
+  shopping = data.shopping || [];
+  renderAll();
+}
+
+function refresh() {
+  run('getData',[],applyData);
+}
+
+function showTab(tab,load=true) {
+  currentTab = tab;
+
+  ['fridge','scan','shopping','add'].forEach(id=>{
+    el(id).classList.toggle('hidden',id!==tab);
+    el('nav'+id[0].toUpperCase()+id.slice(1))
+      .classList.toggle('active',id===tab);
+  });
+
+  if (tab !== 'scan') stopCamera();
+  if (load && (tab==='fridge'||tab==='shopping')) refresh();
+}
+
+function renderAll() {
+  renderFridge();
+  renderShopping();
+}
+
+function renderFridge() {
+  const search = el('search').value.toLowerCase();
+  const filtered = inventory.filter(i=>
+    i.name.toLowerCase().includes(search)
+  );
+
+  if (!filtered.length) {
+    el('fridgeList').innerHTML =
+      '<p class="muted">No products found.</p>';
+    return;
+  }
+
+  const categories = [...new Set(filtered.map(i=>i.category))];
+  let html = '';
+
+  categories.forEach(category=>{
+    html += '<h3>'+safe(category)+'</h3>';
+
+    filtered.filter(i=>i.category===category).forEach(item=>{
+      const i = inventory.indexOf(item);
+
+      html += `
+        <div class="item">
+          <div class="row">
+            <div class="details">
+              <div class="name">${safe(item.name)}</div>
+              <div class="muted">${safe(item.unit)}
+                ${item.qty<=item.low?'<span class="low"> · Low stock</span>':''}
+              </div>
+            </div>
+            <div class="qty">
+              <button onclick="adjustFridge(${i},-1)">−</button>
+              <strong>${item.qty}</strong>
+              <button onclick="adjustFridge(${i},1)">+</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="secondary" onclick="editItem(${i})">Edit</button>
+            <button class="secondary" onclick="sendToShopping(${i})">+ Shopping</button>
+            <button class="danger" onclick="removeFridge(${i})">Delete</button>
+          </div>
+        </div>`;
+    });
+  });
+
+  el('fridgeList').innerHTML = html;
+}
+
+function renderShopping() {
+  el('shoppingList').innerHTML = shopping.length
+    ? shopping.map((item,i)=>`
+      <div class="item">
+        <div class="row">
+          <div class="details">
+            <div class="name">${safe(item.name)}</div>
+            <div class="muted">${safe(item.category)}</div>
+          </div>
+          <div class="qty">
+            <button onclick="adjustShop(${i},-1)">−</button>
+            <strong>${item.qty}</strong>
+            <button onclick="adjustShop(${i},1)">+</button>
+          </div>
+        </div>
+        <div class="actions">
+          <button onclick="restock(${i})">Restock Fridge</button>
+          <button class="danger" onclick="removeShop(${i})">Remove</button>
+        </div>
+      </div>`).join('')
+    : '<p class="muted">Shopping list is empty.</p>';
+
+  const suggestions = inventory.filter(item=>
+    item.qty<=item.low &&
+    !shopping.some(s=>
+      (item.barcode && s.barcode &&
+       normalizeCode(item.barcode)===normalizeCode(s.barcode)) ||
+      item.name.toLowerCase()===s.name.toLowerCase()
+    )
+  );
+
+  el('suggestions').innerHTML = suggestions.length
+    ? suggestions.map(item=>{
+      const i=inventory.indexOf(item);
+      return `<div class="item">
+        <div class="row">
+          <div class="details">
+            <strong>${safe(item.name)}</strong>
+            <div class="muted">Have ${item.qty}</div>
+          </div>
+          <button onclick="sendToShopping(${i})">+ Shopping</button>
+        </div>
+      </div>`;
+    }).join('')
+    : '<p class="muted">No new low-stock suggestions.</p>';
+}
+
+function normalizeCode(s) {
+  s=String(s||'');
+  return s.length===13 && s[0]==='0'?s.slice(1):s;
+}
+
+function adjustFridge(i,delta) {
+  run('adjustInventory',[inventory[i].id,delta],applyData);
+}
+function removeFridge(i) {
+  if(confirm('Delete '+inventory[i].name+'?'))
+    run('deleteInventory',[inventory[i].id],applyData);
+}
+function sendToShopping(i) {
+  const item=inventory[i];
+  run('addShopping',[{
+    name:item.name,
+    category:item.category,
+    barcode:item.barcode,
+    qty:1
+  }],applyData);
+}
+function adjustShop(i,delta) {
+  run('adjustShopping',[shopping[i].id,delta],applyData);
+}
+function removeShop(i) {
+  if(confirm('Remove '+shopping[i].name+'?'))
+    run('deleteShopping',[shopping[i].id],applyData);
+}
+function restock(i) {
+  const item=shopping[i];
+  if(confirm('Restock '+item.qty+' '+item.name+'?'))
+    run('restockShopping',[item.id],applyData);
+}
+
+function resetForm() {
+  el('itemId').value='';
+  el('addDestination').disabled=false;
+  el('addDestination').value='fridge';
+  el('name').value='';
+  el('category').value='Other';
+  el('quantity').value=1;
+  el('unit').value='each';
+  el('low').value=1;
+  el('barcode').value='';
+  updateAddForm();
+}
+
+function updateAddForm() {
+  el('fridgeFields').classList.toggle(
+    'hidden',el('addDestination').value!=='fridge'
+  );
+}
+
+function editItem(i) {
+  const item=inventory[i];
+  resetForm();
+  el('itemId').value=item.id;
+  el('addDestination').disabled=true;
+  el('name').value=item.name;
+
+  if (![...el('category').options].some(o=>o.value===item.category)) {
+    el('category').add(new Option(item.category,item.category));
+  }
+
+  el('category').value=item.category;
+  el('quantity').value=item.qty;
+  el('unit').value=item.unit;
+  el('low').value=item.low;
+  el('barcode').value=item.barcode;
+  updateAddForm();
+  showTab('add');
+}
+
+function saveManual() {
+  const name=el('name').value.trim();
+  if(!name) { alert('Enter a product name.'); return; }
+
+  const destination=el('addDestination').value;
+  const item={
+    id:el('itemId').value,
+    name,
+    category:el('category').value,
+    qty:Number(el('quantity').value),
+    unit:el('unit').value,
+    low:Number(el('low').value),
+    barcode:el('barcode').value.trim()
+  };
+
+  const method=destination==='fridge'?'saveInventory':'addShopping';
+
+  run(method,[item],data=>{
+    applyData(data);
+    resetForm();
+    showTab(destination==='fridge'?'fridge':'shopping',false);
+  });
+}
+
+function scanToShopping() {
+  el('scanDestination').value='shopping';
+  updateScanMessage();
+  showTab('scan');
+}
+
+function updateScanMessage() {
+  el('scanMessage').textContent =
+    el('scanDestination').value==='fridge'
+    ? 'Adds one to the fridge and removes matching shopping-list entries.'
+    : 'Adds one to shopping without changing fridge inventory.';
+}
+
+async function startCamera() {
+  if(scanner||starting||busy||processing) return;
+
+  if(typeof Html5Qrcode==='undefined') {
+    alert('Barcode scanner library did not load.');
+    return;
+  }
+
+  starting=true;
+  el('startButton').disabled=true;
+
+  try {
+    const reader=new Html5Qrcode('reader',{
+      formatsToSupport:[
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8
+      ],
+      verbose:false
+    });
+
+    scanner=reader;
+
+    await reader.start(
+      {facingMode:'environment'},
+      {fps:10,qrbox:{width:250,height:150}},
+      code=>handleScan(code),
+      ()=>{}
+    );
+
+    if(currentTab!=='scan'||scanner!==reader) {
+      try { await reader.stop(); reader.clear(); } catch(e){}
+    } else {
+      el('scanResult').innerHTML=
+        '<div class="success">Camera ready. Point at a barcode.</div>';
+    }
+  } catch(e) {
+    scanner=null;
+    el('scanResult').innerHTML=
+      '<div class="notice">Camera error: '+safe(e.message||e)+'</div>';
+  } finally {
+    starting=false;
+    el('startButton').disabled=false;
+  }
+}
+
+async function stopCamera() {
+  if(!scanner) return;
+  const reader=scanner;
+  scanner=null;
+  try {
+    if(reader.isScanning) await reader.stop();
+    reader.clear();
+  } catch(e) { console.log(e); }
+}
+
+async function handleScan(code) {
+  code=String(code||'').trim();
+  if(!/^\d{8,14}$/.test(code)||processing||busy) return;
+
+  processing=true;
+  const destination=el('scanDestination').value;
+
+  el('scanResult').innerHTML=
+    '<div class="notice">Looking up '+safe(code)+'...</div>';
+
+  await stopCamera();
+
+  try {
+    const result=await api('scanProduct',code,destination);
+
+    if(result.success) {
+      applyData(result.data);
+      el('scanResult').innerHTML=`
+        <div class="success">
+          ✓ ${safe(result.message)}<br><br>
+          <strong>${safe(result.name)}</strong><br>
+          Category: ${safe(result.category)}<br>
+          Quantity: ${result.qty}
+        </div>
+        <button onclick="startCamera()">Scan Next Item</button>`;
+    } else {
+      el('manualBarcode').value=code;
+      el('scanResult').innerHTML=`
+        <div class="notice">Product not found in database.</div>
+        <button onclick="addUnknown()">Enter Product Details</button>`;
+    }
+  } catch(e) {
+    el('scanResult').innerHTML=
+      '<div class="notice">'+safe(e.message)+'</div>'+
+      '<button onclick="startCamera()">Try Again</button>';
+  } finally {
+    processing=false;
+  }
+}
+
+function manualScan() {
+  const code=el('manualBarcode').value.trim();
+  if(!/^\d{8,14}$/.test(code)) {
+    alert('Enter an 8-14 digit barcode.');
+    return;
+  }
+  handleScan(code);
+}
+
+function addUnknown() {
+  const code=el('manualBarcode').value.trim();
+  const destination=el('scanDestination').value;
+  resetForm();
+  el('addDestination').value=destination;
+  el('barcode').value=code;
+  updateAddForm();
+  showTab('add');
+}
+
+CATEGORIES.forEach(c=>{
+  el('category').add(new Option(c,c));
+});
+</script>
+</body>
+</html>
